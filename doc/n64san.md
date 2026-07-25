@@ -13,7 +13,6 @@ compiler has no sanitizer support, so matching builds are unaffected by everythi
 
 ```sh
 git submodule update --init --recursive
-make clean_src
 make COMPILER=gcc SANITIZE=all SANITIZE_FILES="src/racer.c src/camera.c" -j$(nproc)
 ```
 
@@ -24,9 +23,10 @@ Then run `build/dkr.us.v77.z64` in an emulator with IS-Viewer support (see
 SanitizerTool: runtime error: shift exponent 32 is too large for 32-bit type 'int'
 ```
 
-**`make clean_src` is required whenever you change any `SANITIZE*` option.** The build
-system tracks source and header changes, not compiler flags, so existing object files
-would otherwise be reused with their old instrumentation.
+Changing any `SANITIZE*` option rebuilds everything automatically —
+the options are recorded in `build/.debug_opts` and every object depends on it, because
+make otherwise tracks only sources and headers and would reuse objects built with the
+old flags.
 
 ## Options
 
@@ -54,6 +54,20 @@ build rejects unsupported names up front. `SANITIZE=all` expands to exactly:
 - `screen` — DKR's own on-screen debug text (`render_printf`). That buffer is only
   0x800 bytes and is flushed once a frame, so it only really shows the first few reports
   of a frame, but it needs no emulator support.
+
+#### On real hardware
+
+The IS-Viewer was a devkit peripheral, so a stock console shows nothing. Reading it back
+needs a flashcart that emulates the device and forwards the buffer over USB:
+
+- **SummerCart64** — has an IS-Viewer implementation; enable it when deploying
+  (`sc64deployer upload --isv 0x03FF0000 rom.z64`) and read it with `sc64deployer debug`.
+- **64drive** — its firmware emulates IS-Viewer 64; the text shows up over USB.
+- **EverDrive-64 X7** — no IS-Viewer emulation. Use `SANITIZE_OUTPUT=screen` instead, or
+  swap the sink for the cart's own USB protocol via UNFLoader.
+
+If you have no supporting cart, `SANITIZE_OUTPUT=screen` needs nothing but the console —
+that's the reason the sink exists.
 
 #### Emulators
 
