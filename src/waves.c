@@ -101,8 +101,15 @@ s32 gWaveTileCountZ;    // used in mempool_alloc_safe size calculation
 s32 gNumberOfLevelSegments;
 s32 D_8012A0E8[64];
 s16 gWaveBlockIDs[512]; // used to index gWaveModel and as arg0 for func_800B92F4 and func_800B97A8
+#ifdef AVOID_UB
+unk8012A5E8 D_8012A5E8[26];
+#define D_8012A600 (D_8012A5E8 + 2)
+#define D_8012A600_COUNT (ARRAY_COUNT(D_8012A5E8) - 2)
+#else
 unk8012A5E8 D_8012A5E8[2];
 unk8012A5E8 D_8012A600[24];
+#define D_8012A600_COUNT ARRAY_COUNT(D_8012A600)
+#endif
 f32 gWavePowerBase;
 f32 gWaveMagnitude;
 s32 gWavePowerDivisor;
@@ -426,7 +433,7 @@ void waves_visibility(s32 xPosition, s32 yPosition, s32 zPosition, s32 currentVi
 
     if (0) {}
 
-    for (var_v1 = 0; var_v1 != ARRAY_COUNT(D_8012A600); var_v1 += 4) {
+    for (var_v1 = 0; var_v1 != D_8012A600_COUNT; var_v1 += 4) {
         D_8012A5E8[0].blockID = -1;
         D_8012A5E8[1].blockID = -1;
         D_8012A600[var_v1].blockID = -1;

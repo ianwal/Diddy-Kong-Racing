@@ -1,0 +1,103 @@
+{
+  // Debugging the gcc build under ares running on the HOST, from inside the devcontainer.
+  //
+  // Requires, once:
+  //   1. gdb-multiarch in the container (apt-get install -y gdb-multiarch).
+  //   2. The container on the host's network namespace: "runArgs": ["--network=host"]
+  //      in your devcontainer.json. ares' GDB server binds loopback only, so the
+  //      default bridge network cannot reach it. See doc/n64san.md.
+  //   3. ares: Settings > System > Debugging > "GDB debugging" (+ "IPv4 mode" to get
+  //      127.0.0.1 instead of [::1]), then load build/dkr.us.v77.z64.
+  //
+  // Build the ROM with sanitizers first, e.g.
+  //   make COMPILER=gcc SANITIZE=bounds SANITIZE_FILES="src/waves.c" -j$(nproc)
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ares: attach",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/dkr.us.v77.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb-multiarch",
+      "miDebuggerServerAddress": "127.0.0.1:9123",
+      "stopAtEntry": false,
+      "stopAtConnect": true,
+      "externalConsole": false,
+      "setupCommands": [
+        {
+          "description": "Readable struct/array printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "ares: break on first sanitizer report",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/dkr.us.v77.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb-multiarch",
+      "miDebuggerServerAddress": "127.0.0.1:9123",
+      "stopAtEntry": false,
+      "stopAtConnect": false,
+      "externalConsole": false,
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          // Every n64san ubsan entry point. gcc emits the plain name normally and the
+          // _abort variant under SANITIZE_ABORT=1, so both are covered by the regex.
+          // The frame above the handler is the instrumented code that tripped it.
+          "description": "Break on every ubsan handler",
+          "text": "rbreak ^__ubsan_handle_",
+          "ignoreFailures": false
+        }
+      ]
+    },
+    {
+      // Same idea as the config above, but stopping at the runtime's chokepoints
+      // instead of all ~46 handlers. Prefer this one: it also catches the fatal
+      // paths, which never reach a __ubsan_handle_ frame at all.
+      "name": "ares: break on n64san sanitizer hooks",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/dkr.us.v77.elf",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb-multiarch",
+      "miDebuggerServerAddress": "127.0.0.1:9123",
+      "stopAtEntry": false,
+      "stopAtConnect": false,
+      "externalConsole": false,
+      "setupCommands": [
+        {
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          // Every recoverable UB report funnels here, whether or not the ROM was
+          // built with SANITIZE_ABORT=1. Walk up two frames to reach the
+          // instrumented code: Ubsan_DiagImpl < __ubsan_handle_* < your function.
+          // `loc` holds the file/line the check fired on.
+          "description": "Break on every ubsan report",
+          "text": "break Ubsan_DiagImpl",
+          "ignoreFailures": false
+        },
+        {
+          // Terminal paths only: Die(), CheckFailed(), and the _abort handlers all
+          // land here, and it spins forever afterwards, so this is the last chance
+          // to see the stack. `exp`/`file`/`line` describe the failure.
+          "description": "Break on fatal sanitizer / runtime assert",
+          "text": "break N64Wrapper_Assert",
+          "ignoreFailures": false
+        }
+      ]
+    }
+  ]
+}
