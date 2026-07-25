@@ -85,6 +85,56 @@ always sees a cursor of 0 and every message is written from the start of the buf
 result is correct under either interpretation. A flashcart or emulator that *does* store
 the cursor would replay earlier text on each report.
 
+## Debugging reports with gdb
+
+A report tells you what happened; a breakpoint on the handler tells you where. The
+gcc build carries DWARF (`-g` is in `GCC_CFLAGS`, and
+[mods/dkr.custom.ld](../mods/dkr.custom.ld) keeps the `.debug_*` sections from the
+`/DISCARD/` rule), so gdb resolves file, line and locals in the instrumented frame.
+
+In ares: **Settings → System → Debugging → GDB debugging**, plus **IPv4 mode** to listen
+on `127.0.0.1:9123` rather than `[::1]:9123`. The status bar shows `GDB Listening ...`.
+
+```sh
+gdb-multiarch build/dkr.us.v77.elf
+(gdb) target remote 127.0.0.1:9123
+(gdb) rbreak ^__ubsan_handle_      # or a single one, e.g. __ubsan_handle_out_of_bounds
+(gdb) continue
+```
+
+gcc calls the plain handler normally and the `_abort` variant under `SANITIZE_ABORT=1`.
+At the breakpoint, `$a0` is the check's `...Data *` (whose first member is always a
+`SourceLocation`: filename pointer, line, column) and the remaining argument registers
+are the offending values. `frame 1` is the code that tripped the check.
+
+Don't combine this with `SANITIZE_ABORT=1` — that halts in `N64Wrapper_Assert` *after*
+the report, one frame further from the bug. `SANITIZE_ABORT` is for when no debugger is
+attached.
+
+### From a devcontainer
+
+ares' GDB server binds loopback only, so a container on Docker's default bridge network
+cannot reach it — `host.docker.internal` does not help. Put the container in the host's
+network namespace instead, in your `devcontainer.json`:
+
+```json
+"runArgs": ["--network=host"]
+```
+
+Then `127.0.0.1:9123` inside the container is the host's ares. The container also needs
+`gdb-multiarch` (`apt-get install -y gdb-multiarch`); the mips toolchain's binutils do
+not include a debugger.
+
+If host networking isn't an option, bridge the port on the host instead and point gdb at
+the gateway address:
+
+```sh
+socat TCP-LISTEN:9124,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:9123
+```
+
+[.vscode/launch.json](../.vscode/launch.json) has two `cppdbg` configurations for this:
+a plain attach, and one that sets the `rbreak` above on connect.
+
 ## Size
 
 Instrumentation is expensive. Measured on `us.v77` with all checks enabled:

@@ -120,6 +120,26 @@ SECTIONS
     assets_ROM_END = __romPos;
     assets_VRAM_END = .;
 
+    /* DWARF from the gcc build's -g. These are non-alloc, so they cost nothing in
+       the ROM (objcopy drops them), but the /DISCARD/ below would eat them otherwise
+       and leave gdb with symbol names and no line numbers. */
+    .debug_abbrev       0 : { *(.debug_abbrev) }
+    .debug_addr         0 : { *(.debug_addr) }
+    .debug_aranges      0 : { *(.debug_aranges) }
+    .debug_frame        0 : { *(.debug_frame) }
+    .debug_info         0 : { *(.debug_info) }
+    .debug_line         0 : { *(.debug_line) }
+    .debug_line_str     0 : { *(.debug_line_str) }
+    .debug_loc          0 : { *(.debug_loc) }
+    .debug_loclists     0 : { *(.debug_loclists) }
+    .debug_macro        0 : { *(.debug_macro) }
+    .debug_pubnames     0 : { *(.debug_pubnames) }
+    .debug_pubtypes     0 : { *(.debug_pubtypes) }
+    .debug_ranges       0 : { *(.debug_ranges) }
+    .debug_rnglists     0 : { *(.debug_rnglists) }
+    .debug_str          0 : { *(.debug_str) }
+    .debug_str_offsets  0 : { *(.debug_str_offsets) }
+
     /DISCARD/ :
     {
         *(*);

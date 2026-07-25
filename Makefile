@@ -422,6 +422,7 @@ GCC_CFLAGS := -DNDEBUG -DAVOID_UB -DNON_MATCHING $(INCLUDE_CFLAGS) $(C_DEFINES) 
 	-funsigned-char \
 	-fwrapv \
 	-falign-functions=16 \
+	-g \
 	-G 0
 
 $(GCC_SAFE_FILES): CC := $(CROSS)gcc
