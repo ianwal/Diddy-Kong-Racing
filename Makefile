@@ -185,6 +185,18 @@ O_FILES_LD := $(filter-out $(BUILD_DIR)/asm/assets/assets.s.o, \
 	$(foreach file,$(S_FILES),$(BUILD_DIR)/$(file).o) \
 	$(foreach file,$(C_FILES),$(BUILD_DIR)/$(file).o))
 
+# The build tracks sources and headers, not flags, so changing a sanitizer option would
+# otherwise silently reuse objects built with the old one (which shows up as a wall of
+# undefined __ubsan_handle_* references). Record the options in a stamp file and hang every
+# object off it, so a change forces a rebuild.
+DEBUG_OPTS_STAMP := $(BUILD_DIR)/.debug_opts
+DEBUG_OPTS := SANITIZE=$(SANITIZE_CHECKS) FILES=$(SANITIZE_FILES) OUT=$(SANITIZE_OUTPUT) \
+              ABORT=$(SANITIZE_ABORT) SANDEBUG=$(SANITIZE_DEBUG)
+DUMMY != mkdir -p $(BUILD_DIR) && { test "$$(cat $(DEBUG_OPTS_STAMP) 2>/dev/null)" = "$(DEBUG_OPTS)" \
+         || echo "$(DEBUG_OPTS)" > $(DEBUG_OPTS_STAMP); }
+# The rule hanging $(O_FILES) off this stamp lives after `default:`, so it can't become
+# make's default goal.
+
 find-command = $(shell which $(1) 2>/dev/null)
 find-mips-prefix = $(shell test -n "$(call find-command,$(1)-ld)" && test -n "$(call find-command,$(1)-gcc)" && echo $(1))
 
@@ -229,7 +241,7 @@ MIPSISET       = -mips1
 
 DEFINES := _FINALROM NDEBUG TARGET_N64 F3DDKR_GBI
 DEFINES += VERSION_$(REGION)_$(VERSION)
-MATCHDEFS := 
+MATCHDEFS :=
 
 VERIFY = verify
 
@@ -445,6 +457,9 @@ $(N64SAN_WRAPPER_O_FILES): CC_CHECK += $(N64SAN_WRAPPER_CFLAGS)
 default: all
 
 all: $(VERIFY)
+
+# Rebuild everything when a debug option changes; see DEBUG_OPTS above.
+$(O_FILES): $(DEBUG_OPTS_STAMP)
 
 dirs:
 	$(foreach dir,$(SRC_DIRS) $(ASM_DIRS) $(HASM_DIRS) $(BIN_DIRS),$(shell mkdir -p $(BUILD_DIR)/$(dir)))
