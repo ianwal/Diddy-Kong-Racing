@@ -16,6 +16,22 @@ ifneq ($(COMPILER),ido)
 	NON_MATCHING := 1
 endif
 
+# Sanitizers (n64san). Space or comma separated list of -fsanitize= options to build the
+# gcc-compiled game files with, e.g. SANITIZE=shift,signed-integer-overflow.
+# SANITIZE=all enables every option the n64san ubsan runtime implements.
+# Requires COMPILER=gcc. See doc/n64san.md.
+SANITIZE ?=
+# Which source files to instrument, e.g. SANITIZE_FILES="src/racer.c src/camera.c".
+# Empty instruments every gcc-compiled file, which is usually too big to fit in RAM.
+SANITIZE_FILES ?=
+# Where sanitizer reports are sent: isviewer (emulator debug port), screen (DKR's
+# on-screen debug text) or both.
+SANITIZE_OUTPUT ?= isviewer
+# Set to 1 to make a report terminate the game instead of letting it continue.
+SANITIZE_ABORT ?= 0
+# Set to 1 for extra tracing from inside the sanitizer runtime itself.
+SANITIZE_DEBUG ?= 0
+
 # Define a custom boot file if desired to use something other than the vanilla one
 BOOT_CUSTOM ?= mods/boot_custom.bin
 
@@ -72,6 +88,68 @@ SRC_DIRS = $(SRC_DIR) $(LIBULTRA_SRC_DIRS)
 SYMBOLS_DIR = ver/symbols
 
 TOOLS_DIR = tools
+
+### Sanitizers (n64san) ###
+
+COMMA := ,
+
+N64SAN_DIR        := $(TOOLS_DIR)/n64san
+N64SAN_WRAPPER_DIR := $(SRC_DIR)/n64san
+# Every -fsanitize= option the n64san ubsan runtime provides handlers for. Anything
+# outside this list (e.g. plain -fsanitize=undefined) will fail to link.
+N64SAN_ALL_CHECKS := shift integer-divide-by-zero null signed-integer-overflow bounds \
+                     alignment object-size float-divide-by-zero float-cast-overflow \
+                     pointer-overflow
+
+# SANITIZE usually comes from the command line, which can't be reassigned, so the
+# normalised list lives in its own variable. Accept comma separated lists too.
+SANITIZE_CHECKS := $(subst $(COMMA), ,$(SANITIZE))
+ifeq ($(SANITIZE_CHECKS),all)
+  SANITIZE_CHECKS := $(N64SAN_ALL_CHECKS)
+endif
+
+ifneq ($(SANITIZE_CHECKS),)
+# The runtime only implements a subset of ubsan, so reject the rest here rather than
+# leaving the user to decode a wall of undefined __ubsan_handle_* references.
+SANITIZE_UNSUPPORTED := $(filter-out $(N64SAN_ALL_CHECKS),$(SANITIZE_CHECKS))
+ifneq ($(SANITIZE_UNSUPPORTED),)
+  $(error n64san has no runtime support for: $(SANITIZE_UNSUPPORTED). Supported: $(N64SAN_ALL_CHECKS) (or SANITIZE=all))
+endif
+ifneq ($(COMPILER),gcc)
+  $(error SANITIZE requires COMPILER=gcc, the ido compiler has no sanitizer support)
+endif
+ifeq ($(wildcard $(N64SAN_DIR)/Makefile),)
+  $(error $(N64SAN_DIR) is missing, run: git submodule update --init --recursive)
+endif
+
+# -fsanitize= accepts comma separated lists, so split on whitespace only.
+SANITIZE_FLAGS := $(foreach check,$(SANITIZE_CHECKS),-fsanitize=$(check))
+ifeq ($(SANITIZE_ABORT),1)
+  SANITIZE_FLAGS += -fno-sanitize-recover=all
+endif
+
+# Add the ubsan runtime, but only the game files' own wrapper implementation. n64san's
+# libn64_wrapper.a only knows about OoT/MM, so $(N64SAN_WRAPPER_DIR) supplies the DKR one.
+N64SAN_LIBS := $(N64SAN_DIR)/libn64_ubsan.a
+SRC_DIRS += $(N64SAN_WRAPPER_DIR)
+
+N64SAN_WRAPPER_CFLAGS := -I $(N64SAN_DIR)/include -DN64WRAPPER_DONT_INCLUDE_BUILTIN_ULTRA64
+ifneq ($(filter isviewer both,$(SANITIZE_OUTPUT)),)
+  N64SAN_WRAPPER_CFLAGS += -DN64SAN_SINK_ISVIEWER=1
+endif
+ifneq ($(filter screen both,$(SANITIZE_OUTPUT)),)
+  N64SAN_WRAPPER_CFLAGS += -DN64SAN_SINK_SCREEN=1
+endif
+ifeq ($(filter isviewer screen both,$(SANITIZE_OUTPUT)),)
+  $(error Invalid SANITIZE_OUTPUT '$(SANITIZE_OUTPUT)', expected one of: isviewer screen both)
+endif
+
+# -fwrapv defines away signed overflow, which silences the check entirely.
+ifneq ($(filter signed-integer-overflow,$(SANITIZE_CHECKS)),)
+  SANITIZE_DROP_FLAGS := -fwrapv
+  $(info Note: dropping -fwrapv so -fsanitize=signed-integer-overflow can fire)
+endif
+endif
 
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
@@ -242,6 +320,8 @@ LD_SCRIPT  = ver/$(BASENAME).$(REGION).$(VERSION).ld
 else
 LD_SCRIPT  = mods/dkr.custom.ld
 LD_FLAGS += $(O_FILES_LD)
+# Must come after the objects that reference the __ubsan_handle_* entry points.
+LD_FLAGS += $(N64SAN_LIBS)
 endif
 
 LD_FLAGS   += -T $(LD_SCRIPT) -T $(SYMBOLS_DIR)/undefined_syms.txt -Map $(TARGET).map
@@ -304,11 +384,11 @@ ifeq ($(COMPILER),gcc)
 	include gcc_safe_files.mk
 endif
 
-$(GCC_SAFE_FILES): CC := $(CROSS)gcc
-$(GCC_SAFE_FILES): CC_WARNINGS :=
-$(GCC_SAFE_FILES): MIPSISET := -mips3
-$(GCC_SAFE_FILES): OPT_FLAGS := -Os
-$(GCC_SAFE_FILES): CFLAGS := -DNDEBUG -DAVOID_UB -DNON_MATCHING $(INCLUDE_CFLAGS) $(C_DEFINES) \
+N64SAN_WRAPPER_O_FILES := $(foreach file,$(wildcard $(N64SAN_WRAPPER_DIR)/*.c),$(BUILD_DIR)/$(file).o)
+# The wrapper is the reporting path itself, so it must never be instrumented.
+GCC_SAFE_FILES := $(filter-out $(N64SAN_WRAPPER_O_FILES),$(GCC_SAFE_FILES))
+
+GCC_CFLAGS := -DNDEBUG -DAVOID_UB -DNON_MATCHING $(INCLUDE_CFLAGS) $(C_DEFINES) \
 	-EB \
 	-march=vr4300 \
 	-mabi=32 \
@@ -331,6 +411,36 @@ $(GCC_SAFE_FILES): CFLAGS := -DNDEBUG -DAVOID_UB -DNON_MATCHING $(INCLUDE_CFLAGS
 	-fwrapv \
 	-falign-functions=16 \
 	-G 0
+
+$(GCC_SAFE_FILES): CC := $(CROSS)gcc
+$(GCC_SAFE_FILES): CC_WARNINGS :=
+$(GCC_SAFE_FILES): MIPSISET := -mips3
+$(GCC_SAFE_FILES): OPT_FLAGS := -Os
+$(GCC_SAFE_FILES): CFLAGS := $(GCC_CFLAGS)
+
+ifneq ($(SANITIZE_CHECKS),)
+ifneq ($(SANITIZE_FILES),)
+  SANITIZE_O_FILES := $(foreach file,$(SANITIZE_FILES),$(BUILD_DIR)/$(file).o)
+  # Anything outside GCC_SAFE_FILES is still built by ido, which can't instrument.
+  SANITIZE_SKIPPED := $(filter-out $(GCC_SAFE_FILES),$(SANITIZE_O_FILES))
+ifneq ($(SANITIZE_SKIPPED),)
+  $(error SANITIZE_FILES contains files that aren't compiled with gcc: $(patsubst $(BUILD_DIR)/%.o,%,$(SANITIZE_SKIPPED)))
+endif
+else
+  SANITIZE_O_FILES := $(GCC_SAFE_FILES)
+endif
+
+# Overrides the $(GCC_SAFE_FILES) assignment above for this subset only, so files left
+# out of SANITIZE_FILES keep their usual flags (-fwrapv included).
+$(SANITIZE_O_FILES): CFLAGS := $(filter-out $(SANITIZE_DROP_FLAGS),$(GCC_CFLAGS)) $(SANITIZE_FLAGS)
+endif
+
+$(N64SAN_WRAPPER_O_FILES): CC := $(CROSS)gcc
+$(N64SAN_WRAPPER_O_FILES): CC_WARNINGS :=
+$(N64SAN_WRAPPER_O_FILES): MIPSISET := -mips3
+$(N64SAN_WRAPPER_O_FILES): OPT_FLAGS := -Os
+$(N64SAN_WRAPPER_O_FILES): CFLAGS := $(GCC_CFLAGS) $(N64SAN_WRAPPER_CFLAGS)
+$(N64SAN_WRAPPER_O_FILES): CC_CHECK += $(N64SAN_WRAPPER_CFLAGS)
 
 default: all
 
@@ -374,8 +484,14 @@ setup:
 	$(V)$(PYTHON) ver/splat/update_baserom_names.py
 	$(V)$(MAKE) -C $(TOOLS_DIR)
 
-clean:
+clean: n64san_clean
 	rm -rf $(BUILD_DIR)
+
+# Safe to run even without the submodule checked out.
+n64san_clean:
+	$(V)if [ -f $(N64SAN_DIR)/Makefile ]; then \
+		$(MAKE) -C $(N64SAN_DIR) MIPS_BINUTILS_PREFIX=$(CROSS) distclean; \
+	fi
 
 clean_src:
 	rm -rf $(BUILD_DIR)/asm
@@ -386,7 +502,7 @@ clean_assets:
 	rm -rf $(ASM_DIRS)
 	rm -rf $(BIN_DIRS)
 
-cleanall:
+cleanall: n64san_clean
 	rm -rf $(BUILD_DIR)
 
 distclean_symbols: clean
@@ -443,7 +559,21 @@ build_assets:
 
 $(GLOBAL_ASM_O_FILES): CC := $(ASM_PROCESSOR) $(CC) -- $(AS) $(ASFLAGS) --
 
-$(TARGET).elf: dirs $(LD_SCRIPT) $(O_FILES) | build_assets
+ifneq ($(N64SAN_LIBS),)
+.PHONY: n64san
+# Built out of tree by n64san's own makefile, so always recurse into it rather than
+# trying to track its sources from here.
+# GAME=OOT only picks which libn64_wrapper.a gets built; that library is not linked,
+# $(N64SAN_WRAPPER_DIR) provides DKR's implementation of the same API instead.
+n64san:
+	@$(PRINT) "$(GREEN)Building n64san runtime$(NO_COL)\n"
+	$(V)$(MAKE) -C $(N64SAN_DIR) MIPS_BINUTILS_PREFIX=$(CROSS) GAME=OOT SAN_DEBUG=$(SANITIZE_DEBUG) libn64_ubsan.a
+
+$(N64SAN_LIBS): n64san
+	@:
+endif
+
+$(TARGET).elf: dirs $(LD_SCRIPT) $(O_FILES) $(N64SAN_LIBS) | build_assets
 	@$(PRINT) "$(GREEN)Linking: $(BLUE)$@$(NO_COL)\n"
 	$(V)$(LD) $(LD_FLAGS) -o $@
 
@@ -535,7 +665,7 @@ $(TARGET).z64: $(TARGET).bin | build_assets
 	$(V)$(PYTHON) $(TOOLS_DIR)/python/CopyRom.py $< $@
 
 ### Settings
-.PHONY: all clean cleanextract default assets
+.PHONY: all clean cleanextract default assets n64san_clean
 SHELL = /bin/bash -e -o pipefail
 
 -include $(BUILD_DIR)/**/*.d
