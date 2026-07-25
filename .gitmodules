@@ -10,3 +10,6 @@
 [submodule "tools/Flips"]
 	path = tools/Flips
 	url = https://github.com/Alcaro/Flips.git
+[submodule "tools/n64san"]
+	path = tools/n64san
+	url = https://github.com/AngheloAlf/n64san

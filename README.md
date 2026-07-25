@@ -119,6 +119,18 @@ Example: `make NON_MATCHING=1 -j4`
 
 The `NON_MATCHING` define will include the functions that don't exactly match one-to-one, but should be no different functionality-wise. If you do notice any bugs that occur in a `NON_MATCHING` build that are not in the vanilla game, then please file an issue describing the bug. It would be helpful if you can track down which function is causing the bug, but that is not required.
 
+### Sanitizers
+
+`COMPILER=gcc` builds can be built with an undefined behaviour sanitizer, which reports
+UB at runtime instead of letting it silently misbehave:
+
+```sh
+make COMPILER=gcc SANITIZE=all SANITIZE_FILES="src/racer.c" -j4
+```
+
+See [doc/n64san.md](doc/n64san.md) for the available checks, where reports are printed,
+and why you should keep `SANITIZE_FILES` short.
+
 ## Style Guide
 
 The style guide for the project can be found here: https://docs.google.com/document/d/1euQf8nwynGcCZL1MfoMaLs-XRvx3ejjj8fIfykUZ-NQ

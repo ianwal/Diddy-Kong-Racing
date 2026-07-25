@@ -46,6 +46,8 @@ SECTIONS
         build/asm/data/f3ddkr_fifo.s.o(.text);
         build/asm/data/f3ddkr_xbus.s.o(.text);
         build/asm/data/ucode_unknown_2.s.o(.text);
+        /* n64san sanitizer runtimes (only linked in when SANITIZE is set) */
+        *libn64_*.a:*(.text*);
         /* Data */
         main_TEXT_END = .;
         main_TEXT_SIZE = ABSOLUTE(main_TEXT_END - main_TEXT_START);
@@ -57,12 +59,16 @@ SECTIONS
         build/asm/data/f3ddkr_fifo.s.o(.data);
         build/asm/data/f3ddkr_xbus.s.o(.data);
         build/asm/data/ucode_unknown_2.s.o(.data);
+        *libn64_*.a:*(.data*);
         /* Rodata */
         main_DATA_END = .;
         main_DATA_SIZE = ABSOLUTE(main_DATA_END - main_DATA_START);
         main_RODATA_START = .;
         build/src*.o(.rodata*);
         build/libultra/src*.o(.rodata*);
+        *libn64_*.a:*(.rodata*);
+        *libn64_*.a:*(.lit4);
+        *libn64_*.a:*(.lit8);
         . = ALIGN(., 16);
         main_RODATA_END = .;
         main_RODATA_SIZE = ABSOLUTE(main_RODATA_END - main_RODATA_START);
@@ -75,6 +81,7 @@ SECTIONS
 
         build/src*.o(.*bss*);
         build/libultra/src*.o(.*bss*);
+        *libn64_*.a:*(.*bss*);
         . = ALIGN(., 16);
         main_BSS_END = .;
         main_BSS_SIZE = ABSOLUTE(main_BSS_END - main_BSS_START);
