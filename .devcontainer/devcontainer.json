@@ -1,0 +1,33 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/universal
+{
+	"name": "Devcontainer",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"dockerFile": "../Dockerfile",
+
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	// "features": {},
+
+	// Share the host's network namespace. ares' GDB server binds loopback only, so this
+	// is what lets gdb inside the container reach 127.0.0.1:9123 on the host PC.
+	// See doc/n64san.md. 'forwardPorts' is the opposite direction (container port ->
+	// host) and cannot help here; it is ignored under host networking anyway.
+	"runArgs": ["--network=host"],
+
+	// Configure tool-specific properties.
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// C/C++ language support, and the cppdbg debug adapter that
+				// .vscode/launch.json uses.
+				"ms-vscode.cpptools"
+			]
+		}
+	}
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "uname -a",
+
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "root"
+}

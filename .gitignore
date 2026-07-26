@@ -81,3 +81,10 @@ tools/ido-recomp
 tools/binutils
 *.d
 treemap.html
+
+!.devcontainer/
+.devcontainer/*
+!.devcontainer/devcontainer.json
+!.vscode/
+.vscode/*
+!.vscode/launch.json
