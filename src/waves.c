@@ -436,10 +436,10 @@ void waves_visibility(s32 xPosition, s32 yPosition, s32 zPosition, s32 currentVi
     for (var_v1 = 0; var_v1 != D_8012A600_COUNT; var_v1 += 4) {
         D_8012A5E8[0].blockID = -1;
         D_8012A5E8[1].blockID = -1;
-        D_8012A600[var_v1].blockID = -1;
-        D_8012A600[var_v1 + 1].blockID = -1;
-        D_8012A600[var_v1 + 2].blockID = -1;
-        D_8012A600[var_v1 + 3].blockID = -1;
+        D_8012A5E8[var_v1 + 2].blockID = -1;
+        D_8012A5E8[var_v1 + 3].blockID = -1;
+        D_8012A5E8[var_v1 + 4].blockID = -1;
+        D_8012A5E8[var_v1 + 5].blockID = -1;
     }
 
     if (gWaveController.doubleDensity) {
